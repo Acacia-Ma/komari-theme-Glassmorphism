@@ -14,9 +14,7 @@ import { getRegionCode, getRegionDisplayName } from '@/utils/regionHelper'
 import { formatPriceWithCycle, getDaysUntilExpired, getExpireStatus, parseTags } from '@/utils/tagHelper'
 
 const props = defineProps<{ node: NodeData }>()
-
 const emit = defineEmits<{ click: [] }>()
-
 const appStore = useAppStore()
 
 const formatBytes = (bytes: number) => formatBytesWithConfig(bytes, appStore.byteDecimals)
@@ -49,18 +47,12 @@ const trafficUsedPercentage = computed(() => {
   const { net_total_up = 0, net_total_down = 0, traffic_limit_type } = props.node
   let used = 0
   switch (traffic_limit_type) {
-    case 'up': used = net_total_up
-      break
-    case 'down': used = net_total_down
-      break
-    case 'min': used = Math.min(net_total_up, net_total_down)
-      break
-    case 'max': used = Math.max(net_total_up, net_total_down)
-      break
+    case 'up': used = net_total_up; break
+    case 'down': used = net_total_down; break
+    case 'min': used = Math.min(net_total_up, net_total_down); break
+    case 'max': used = Math.max(net_total_up, net_total_down); break
     case 'sum':
-    default:
-      used = net_total_up + net_total_down
-      break
+    default: used = net_total_up + net_total_down; break
   }
   return Math.min((used / props.node.traffic_limit) * 100, 100)
 })
@@ -88,9 +80,9 @@ const priceTags = computed(() => {
       tags.push(lang === 'zh-CN' ? '已过期' : 'Expired')
     else if (status === 'long_term')
       tags.push(lang === 'zh-CN' ? '长期' : 'Long-term')
-    else tags.push(lang === 'zh-CN' ? `剩余 ${days} 天` : `${days} days left`)
-    const priceText = formatPriceWithCycle(node.price, node.billing_cycle, node.currency, lang)
-    tags.push(priceText)
+    else
+      tags.push(lang === 'zh-CN' ? `剩余 ${days} 天` : `${days} days left`)
+    tags.push(formatPriceWithCycle(node.price, node.billing_cycle, node.currency, lang))
   }
   return tags
 })
@@ -105,67 +97,70 @@ function hasRegion(region: string | null | undefined): boolean {
 <template>
   <CardX
     hoverable
-    class="node-card w-full cursor-pointer border-none shadow-[0_0_0_3px] shadow-transparent transition-all duration-200 rounded-md"
-    :class="[!props.node.online && '!shadow-red-600/20']" @click="emit('click')"
+    class="node-card w-full cursor-pointer border-none shadow-[0_0_0_3px] shadow-transparent transition-all duration-200 rounded-xl"
+    :class="[!props.node.online && '!shadow-red-500/30']"
+    @click="emit('click')"
   >
+    <!-- 头部：名称 + OS + 国旗 -->
     <template #header>
-      <div class="flex gap-2 min-w-0 items-center">
-        <DataTooltip
-          placement="right"
-          :content="formatUptime(props.node.uptime ?? 0)"
-          class="size-2 rounded-full" :class="[props.node.online ? 'bg-green-600' : 'bg-red-600']"
-          content-class="whitespace-nowrap"
-        >
-          <div
-            class="animate-ping absolute inset-0 rounded-full opacity-50"
-            :class="[props.node.online ? 'bg-green-600' : 'bg-red-600']"
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="relative size-2.5 shrink-0">
+          <span
+            class="size-2.5 rounded-full block"
+            :class="props.node.online ? 'bg-green-500' : 'bg-red-500'"
           />
-        </DataTooltip>
-        <span class="text-md font-bold flex-1 min-w-0 truncate">{{ props.node.name }}</span>
+          <span
+            class="animate-ping absolute inset-0 rounded-full opacity-60"
+            :class="props.node.online ? 'bg-green-500' : 'bg-red-500'"
+          />
+        </div>
+        <span class="text-sm font-bold flex-1 min-w-0 truncate">{{ props.node.name }}</span>
       </div>
     </template>
 
     <template #header-extra>
-      <div class="flex gap-2 items-center">
+      <div class="flex gap-1.5 items-center shrink-0">
         <img :src="getOSImage(props.node.os)" :alt="getOSName(props.node.os)" class="size-4">
         <img
-          v-if="hasRegion(props.node.region)" :src="`/images/flags/${getRegionCode(props.node.region)}.svg`"
-          :alt="getRegionDisplayName(props.node.region)" class="size-5 shrink-0"
+          v-if="hasRegion(props.node.region)"
+          :src="`/images/flags/${getRegionCode(props.node.region)}.svg`"
+          :alt="getRegionDisplayName(props.node.region)"
+          class="size-5 shrink-0"
         >
       </div>
     </template>
 
     <template #default>
-      <div class="flex flex-col gap-3">
-        <div class="gap-3 grid grid-cols-2">
-          <!-- <div class="flex flex-col gap-1 col-span-2">
-                <div class="flex gap-2 items-center">
-                  <img :src="getOSImage(props.node.os)" :alt="getOSName(props.node.os)" class="size-4">
-                  <span class="text-xs">{{ getOSName(props.node.os) }}</span>
-                </div>
-              </div> -->
+      <div class="flex flex-col gap-3 relative">
+        <!-- 价格标签 -->
+        <div v-if="priceTags.length" class="flex gap-1.5 flex-wrap -mt-1">
+          <span
+            v-for="(tag, i) in priceTags" :key="i"
+            class="text-[11px] px-2 py-0.5 rounded-full bg-slate-500/10 text-muted-foreground"
+          >
+            {{ tag }}
+          </span>
+        </div>
+
+        <!-- 四项进度条 -->
+        <div class="grid grid-cols-2 gap-x-4 gap-y-2.5">
           <!-- CPU -->
           <div class="flex flex-col gap-1">
-            <div class="w-full text-xs flex flex-row justify-between">
-              <span class="text-muted-foreground">
-                CPU
-              </span>
-              <span>{{ (props.node.cpu ?? 0).toFixed(1) }}%</span>
+            <div class="flex justify-between text-xs">
+              <span class="text-muted-foreground">CPU</span>
+              <span class="tabular-nums font-medium">{{ (props.node.cpu ?? 0).toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="props.node.cpu ?? 0" :status="cpuStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
-              {{ props.node.load.toFixed(2) ?? 0 }}, {{ props.node.load5.toFixed(2) ?? 0 }}, {{
-                props.node.load15.toFixed(2) ?? 0 }}
+              {{ props.node.load.toFixed(2) }}, {{ props.node.load5.toFixed(2) }}, {{ props.node.load15.toFixed(2) }}
             </div>
           </div>
 
           <!-- 内存 -->
           <div class="flex flex-col gap-1">
-            <div class="w-full text-xs flex flex-row justify-between">
-              <span class="text-muted-foreground">
-                内存
-              </span>
-              <span>{{ memPercentage.toFixed(1) }}%</span>
+            <div class="flex justify-between text-xs">
+              <span class="text-muted-foreground">内存</span>
+              <span class="tabular-nums font-medium">{{ memPercentage.toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="memPercentage" :status="memStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
@@ -175,11 +170,9 @@ function hasRegion(region: string | null | undefined): boolean {
 
           <!-- 硬盘 -->
           <div class="flex flex-col gap-1">
-            <div class="w-full text-xs flex flex-row justify-between">
-              <span class="text-muted-foreground">
-                硬盘
-              </span>
-              <span>{{ diskPercentage.toFixed(1) }}%</span>
+            <div class="flex justify-between text-xs">
+              <span class="text-muted-foreground">硬盘</span>
+              <span class="tabular-nums font-medium">{{ diskPercentage.toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="diskPercentage" :status="diskStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
@@ -187,13 +180,11 @@ function hasRegion(region: string | null | undefined): boolean {
             </div>
           </div>
 
-          <!-- 流量进度条 -->
+          <!-- 流量 -->
           <div class="flex flex-col gap-1">
-            <div class="w-full text-xs flex flex-row justify-between">
-              <span class="text-muted-foreground">
-                流量
-              </span>
-              <span>{{ trafficUsedPercentage.toFixed(1) }}%</span>
+            <div class="flex justify-between text-xs">
+              <span class="text-muted-foreground">流量</span>
+              <span class="tabular-nums font-medium">{{ trafficUsedPercentage.toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="trafficUsedPercentage" status="success" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
@@ -207,81 +198,71 @@ function hasRegion(region: string | null | undefined): boolean {
             </div>
           </div>
         </div>
-        <div class="gap-1.5 grid grid-cols-6 relative">
-          <div
-            v-if="!props.node.online"
-            class="absolute inset-0 flex flex-col gap-1 items-center justify-center z-1 text-center" aria-hidden="true"
-          >
-            <div class="text-sm font-medium text-destructive">
-              离线
+
+        <!-- 网速 / 总流量 / 价格 三列 -->
+        <div class="grid grid-cols-3 gap-1.5">
+          <div class="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg bg-slate-500/5">
+            <div class="text-[11px] text-green-600 flex items-center gap-1">
+              <Icon icon="tabler:chevron-up" width="11" height="11" />
+              <span class="truncate">{{ formatBytesPerSecond(props.node.net_out ?? 0) }}</span>
             </div>
-            <div class="text-xs text-muted-foreground">
-              {{ offlineTime }}
+            <div class="text-[11px] text-blue-600 flex items-center gap-1">
+              <Icon icon="tabler:chevron-down" width="11" height="11" />
+              <span class="truncate">{{ formatBytesPerSecond(props.node.net_in ?? 0) }}</span>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg bg-slate-500/5">
+            <div class="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Icon icon="tabler:upload" width="11" height="11" />
+              <span class="truncate">{{ formatBytes(props.node.net_total_up ?? 0) }}</span>
+            </div>
+            <div class="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Icon icon="tabler:download" width="11" height="11" />
+              <span class="truncate">{{ formatBytes(props.node.net_total_down ?? 0) }}</span>
+            </div>
+          </div>
+
+          <div
+            v-if="priceTags.length"
+            class="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg bg-slate-500/5"
+          >
+            <div v-for="(tag, i) in priceTags" :key="i" class="text-[11px] text-muted-foreground truncate">
+              {{ tag }}
             </div>
           </div>
           <div
-            class="flex flex-col gap-0.5 p-1 pl-2 rounded-sm bg-slate-500/5"
-            :class="[priceTags.length ? 'col-span-2' : 'col-span-3', !props.node.online ? 'blur-xs opacity-60' : '']"
+            v-else
+            class="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg bg-slate-500/5"
           >
-            <div class="text-[11px] flex flex-col">
-              <div class="text-green-600 flex flex-row items-center gap-1">
-                <Icon icon="tabler:chevron-up" width="12" height="12" />
-                {{ formatBytesPerSecond(props.node.net_out ?? 0) }}
-              </div>
-              <div class="text-blue-600 flex flex-row items-center gap-1">
-                <Icon icon="tabler:chevron-down" width="12" height="12" />
-                {{ formatBytesPerSecond(props.node.net_in ?? 0) }}
-              </div>
+            <div class="text-[11px] text-muted-foreground truncate">
+              {{ props.node.load.toFixed(2) }}
+            </div>
+            <div class="text-[11px] text-muted-foreground truncate">
+              {{ props.node.load5.toFixed(2) }} / {{ props.node.load15.toFixed(2) }}
             </div>
           </div>
+        </div>
+
+        <!-- 延迟 + 丢包 -->
+        <div class="grid grid-cols-2 gap-1.5">
           <div
-            class="flex flex-col gap-0.5 p-1 pl-2 rounded-sm bg-slate-500/5"
-            :class="[priceTags.length ? 'col-span-2' : 'col-span-3', !props.node.online ? 'blur-xs opacity-60' : '']"
+            class="group/panel relative flex flex-col gap-1.5 p-2 h-11 rounded-lg bg-slate-500/5"
+            :class="[!props.node.online ? 'blur-xs opacity-50' : '']"
+            :title="latencyPanelTooltip"
           >
-            <div class="text-[11px] text-muted-foreground flex flex-col">
-              <div class="flex flex-row items-center gap-1">
-                <Icon icon="tabler:upload" width="12" height="12" />
-                {{ formatBytes(props.node.net_total_up ?? 0) }}
-              </div>
-              <div class="flex flex-row items-center gap-1">
-                <Icon icon="tabler:download" width="12" height="12" />
-                {{ formatBytes(props.node.net_total_down ?? 0) }}
-              </div>
-            </div>
-          </div>
-          <div
-            v-if="priceTags.length" class="col-span-2 flex flex-col gap-0.5 p-1 pl-2 rounded-sm bg-slate-500/5"
-            :class="[!props.node.online ? 'blur-xs opacity-60' : '']"
-          >
-            <div class="text-[11px] text-muted-foreground flex flex-col">
-              <div v-for="(tag, index) in priceTags" :key="index" class="flex flex-row items-center gap-1">
-                {{ tag }}
-              </div>
-            </div>
-          </div>
-          <!-- 运行时长 -->
-          <!-- <div
-            class="col-span-6 flex flex-row gap-2 items-center p-1 rounded-sm bg-slate-500/5 justify-center text-[11px] text-muted-foreground"
-            :class="[!props.node.online ? 'blur-xs opacity-60' : '']"
-          >
-            <span class="inline-flex flex-row gap-1 items-center">
-              {{ formatUptime(props.node.uptime ?? 0) }}
-            </span>
-          </div> -->
-          <!-- 延迟 -->
-          <div
-            class="group/panel relative col-span-3 flex flex-col gap-1.5 p-1.5 h-10 rounded-sm bg-slate-500/5"
-            :class="[!props.node.online ? 'blur-xs opacity-60' : '']" :title="latencyPanelTooltip"
-          >
-            <div class="flex items-center justify-between gap-2 text-[11px] leading-none relative">
+            <div class="flex items-center justify-between text-[11px] leading-none">
               <span class="text-muted-foreground">延迟</span>
-              <span class="font-medium text-foreground/85">{{ latencyDisplay }}</span>
+              <span class="font-medium">{{ latencyDisplay }}</span>
             </div>
             <div
-              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100 cursor-auto"
+              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
               :style="{ gridTemplateColumns: `repeat(${latencyRenderBars.length}, minmax(0, 1fr))` }"
             >
-              <DataTooltip v-for="bar in latencyRenderBars" :key="bar.key" placement="top" :content="bar.tooltip" class="h-full w-full">
+              <DataTooltip
+                v-for="bar in latencyRenderBars" :key="bar.key"
+                placement="top" :content="bar.tooltip" class="h-full w-full"
+              >
                 <span
                   class="block h-full w-full rounded-[1px] transition-transform duration-150 group-hover/data-tooltip:scale-y-160 group-hover/panel:opacity-60 group-hover/data-tooltip:!opacity-100"
                   :class="bar.className"
@@ -289,20 +270,24 @@ function hasRegion(region: string | null | undefined): boolean {
               </DataTooltip>
             </div>
           </div>
-          <!-- 丢包 -->
+
           <div
-            class="group/panel relative col-span-3 flex flex-col gap-1.5 p-1.5 h-10 rounded-sm bg-slate-500/5"
-            :class="[!props.node.online ? 'blur-xs opacity-60' : '']" :title="lossPanelTooltip"
+            class="group/panel relative flex flex-col gap-1.5 p-2 h-11 rounded-lg bg-slate-500/5"
+            :class="[!props.node.online ? 'blur-xs opacity-50' : '']"
+            :title="lossPanelTooltip"
           >
-            <div class="flex items-center justify-between gap-2 text-[11px] leading-none">
+            <div class="flex items-center justify-between text-[11px] leading-none">
               <span class="text-muted-foreground">丢包</span>
-              <span class="font-medium text-foreground/85">{{ lossDisplay }}</span>
+              <span class="font-medium">{{ lossDisplay }}</span>
             </div>
             <div
-              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100 cursor-auto"
+              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
               :style="{ gridTemplateColumns: `repeat(${lossRenderBars.length}, minmax(0, 1fr))` }"
             >
-              <DataTooltip v-for="bar in lossRenderBars" :key="bar.key" placement="top" :content="bar.tooltip" class="h-full w-full">
+              <DataTooltip
+                v-for="bar in lossRenderBars" :key="bar.key"
+                placement="top" :content="bar.tooltip" class="h-full w-full"
+              >
                 <span
                   class="block h-full w-full rounded-[1px] transition-transform duration-150 group-hover/data-tooltip:scale-y-160 group-hover/panel:opacity-60 group-hover/data-tooltip:!opacity-100"
                   :class="bar.className"
@@ -311,13 +296,29 @@ function hasRegion(region: string | null | undefined): boolean {
             </div>
           </div>
         </div>
-        <div v-if="customTags.length > 0" class="flex shrink-0 flex-wrap gap-1 items-center">
+
+        <!-- 自定义标签 -->
+        <div v-if="customTags.length > 0" class="flex flex-wrap gap-1">
           <Badge
-            v-for="(tag, index) in customTags" :key="index" variant="outline"
-            class="!text-[11px] rounded text-muted-foreground border-muted-foreground/10 px-1.5"
+            v-for="(tag, i) in customTags" :key="i"
+            variant="outline"
+            class="!text-[11px] rounded-full text-muted-foreground border-muted-foreground/15 px-2 py-0"
           >
             {{ tag }}
           </Badge>
+        </div>
+
+        <!-- 离线遮罩 -->
+        <div
+          v-if="!props.node.online"
+          class="absolute inset-0 flex flex-col items-center justify-center z-10 rounded-xl bg-white/20 dark:bg-black/20 backdrop-blur-[2px]"
+        >
+          <div class="text-sm font-semibold text-destructive">
+            离线
+          </div>
+          <div class="text-[11px] text-muted-foreground mt-1">
+            {{ offlineTime }}
+          </div>
         </div>
       </div>
     </template>
@@ -328,36 +329,5 @@ function hasRegion(region: string | null | undefined): boolean {
 .node-card {
   position: relative;
   overflow: hidden;
-}
-
-.node-offline-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  pointer-events: none;
-  border-radius: inherit;
-  background-color: var(--card);
-  transition: opacity 200ms ease;
-}
-
-.node-card:hover .node-offline-overlay {
-  opacity: 0;
-}
-
-.node-offline-overlay__content {
-  display: flex;
-  max-width: 100%;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-}
-
-.node-offline-overlay__header,
-.node-offline-overlay__tags {
-  max-width: 100%;
 }
 </style>

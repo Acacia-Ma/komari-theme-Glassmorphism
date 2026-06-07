@@ -47,6 +47,30 @@ let lastPointerX = 0
 let lastPointerY = 0
 let staticRedrawUntil = 0
 
+// 访客坐标
+const visitorCoord = ref<[number, number] | null>(null)
+
+onMounted(async () => {
+  try {
+    const cached = localStorage.getItem('visitor_coord')
+    if (cached) {
+      visitorCoord.value = JSON.parse(cached)
+    }
+    else {
+      const res = await fetch('https://ipapi.co/json/')
+      const data = await res.json()
+      if (data.latitude && data.longitude) {
+        const coord: [number, number] = [data.latitude, data.longitude]
+        visitorCoord.value = coord
+        localStorage.setItem('visitor_coord', JSON.stringify(coord))
+      }
+    }
+  }
+  catch {
+    // 静默失败，降级到 hub 连线
+  }
+})
+
 function normalizePhi(value: number): number {
   const circle = Math.PI * 2
   let next = value % circle
@@ -81,7 +105,6 @@ function shouldKeepStaticRedraw(): boolean {
   return now < staticRedrawUntil
 }
 
-// 减少高采样导致的性能问题
 function getCappedDpr(): number {
   if (typeof window === 'undefined')
     return 1.5
@@ -100,7 +123,6 @@ function clusterKey(c: RegionCluster) {
   return `${c.code}:${c.servers}:${c.onlineServers}`
 }
 
-// 节点按地区聚合
 const regionClusters = computed<RegionCluster[]>(() => {
   const map = new Map<string, RegionCluster>()
   for (const node of displayNodes.value) {
@@ -110,7 +132,6 @@ const regionClusters = computed<RegionCluster[]>(() => {
     const coord = getCoordByCode(code)
     if (!coord)
       continue
-
     let entry = map.get(code)
     if (!entry) {
       entry = { code, coord, servers: 0, onlineServers: 0 }
@@ -151,14 +172,12 @@ function markerId(code: string): string {
   return `cdn-${code.toLowerCase()}`
 }
 
-// 挂载 marker
 const anchorRefs = shallowRef<ReadonlyMap<string, HTMLDivElement>>(new Map())
 
 function getAnchorEl(code: string): HTMLDivElement | undefined {
   return anchorRefs.value.get(markerId(code))
 }
 
-// 容器尺寸缓存
 let cachedContainerW = 0
 let cachedContainerH = 0
 function refreshContainerSizeCache() {
@@ -175,7 +194,6 @@ interface AnchorCtx {
 const anchorCtxs = new WeakMap<HTMLDivElement, AnchorCtx>()
 const dirtyAnchors = new Set<HTMLDivElement>()
 
-// 批量 flush 锚点位置
 function flushDirtyAnchors() {
   if (dirtyAnchors.size === 0)
     return
@@ -187,8 +205,6 @@ function flushDirtyAnchors() {
   dirtyAnchors.clear()
 }
 
-// 锚点定位改为性能更优、支持 GPU 加速的 transform
-// 异常回落到 cobe 默认行为
 function patchAnchorTransform(el: HTMLDivElement) {
   if (patchedAnchors.has(el))
     return
@@ -230,7 +246,7 @@ function patchAnchorTransform(el: HTMLDivElement) {
     patchedAnchors.add(el)
   }
   catch (err) {
-    console.warn('[NodeEarthGlobe] anchor transform patch failed, falling back to cobe default', err)
+    console.warn('[NodeEarthGlobe] anchor transform patch failed', err)
   }
 }
 
@@ -244,7 +260,6 @@ function patchAllAnchors() {
   anchors.forEach(patchAnchorTransform)
 }
 
-// hook wrapper.append：在 cobe 写入新锚点的第一个 left/top 之前完成 patch
 const COBE_HOOK_FLAG = Symbol('cobeAppendHooked')
 type HookableWrapper = HTMLElement & { [COBE_HOOK_FLAG]?: boolean }
 
@@ -290,20 +305,20 @@ const markers = computed<Marker[]>(() => {
   return regionClusters.value.map(cluster => ({
     id: markerId(cluster.code),
     location: cluster.coord,
-    size: 0, // 不渲染圆点
+    size: 0,
   }))
 })
 
-// 以服务器数最多的地区为中心，向其余地区连线，形成 CDN 拓扑
+// 连线从访客IP出发，降级到节点最多的地区
 const arcs = computed<Arc[]>(() => {
   const clusters = regionClusters.value
-  if (clusters.length < 2)
+  if (clusters.length === 0)
     return []
-  const hub = clusters[0]
-  if (!hub)
+  const fromCoord = visitorCoord.value ?? clusters[0]?.coord
+  if (!fromCoord)
     return []
-  return clusters.slice(1).map(cluster => ({
-    from: hub.coord,
+  return clusters.map(cluster => ({
+    from: fromCoord,
     to: cluster.coord,
   }))
 })
@@ -312,20 +327,20 @@ const themeColors = computed(() => {
   if (appStore.isDark) {
     return {
       dark: 1,
-      mapBrightness: 4,
-      baseColor: [0.32, 0.33, 0.4] as [number, number, number],
-      markerColor: [0.4, 0.7, 1.0] as [number, number, number],
-      glowColor: [0.2, 0.25, 0.45] as [number, number, number],
-      arcColor: [0.45, 0.75, 1.0] as [number, number, number],
+      mapBrightness: 8,
+      baseColor: [0.95, 0.95, 0.98] as [number, number, number],
+      markerColor: [0.3, 0.85, 1.0] as [number, number, number],
+      glowColor: [0.75, 0.88, 0.98] as [number, number, number],
+      arcColor: [0.50, 0.80, 0.95] as [number, number, number],
     }
   }
   return {
     dark: 0,
-    mapBrightness: 6,
-    baseColor: [1, 1, 1] as [number, number, number],
-    markerColor: [0.21, 0.51, 0.93] as [number, number, number],
-    glowColor: [1, 1, 1] as [number, number, number],
-    arcColor: [0.21, 0.51, 0.93] as [number, number, number],
+    mapBrightness: 10,
+    baseColor: [0.98, 0.98, 0.99] as [number, number, number],
+    markerColor: [0.05, 0.35, 0.90] as [number, number, number],
+    glowColor: [0.80, 0.90, 1.0] as [number, number, number],
+    arcColor: [0.45, 0.70, 0.90] as [number, number, number],
   }
 })
 
@@ -345,8 +360,8 @@ function buildInitialOptions(): COBEOptions {
     phi,
     theta,
     dark: colors.dark,
-    diffuse: 1.2,
-    mapSamples: 16000, // 地图采样点数，默认 16000
+    diffuse: 1.0, // 从 2.2 降到 1.0，减少白色溢光
+    mapSamples: 36000, // 保持高采样以获得更平滑的地球，尤其是在大屏幕上
     mapBrightness: colors.mapBrightness,
     baseColor: colors.baseColor,
     markerColor: colors.markerColor,
@@ -354,8 +369,8 @@ function buildInitialOptions(): COBEOptions {
     markers: markers.value,
     arcs: arcs.value,
     arcColor: colors.arcColor,
-    arcWidth: 0.75,
     arcHeight: 0.4,
+    arcWidth: 0.5,
     markerElevation: 0,
   }
 }
@@ -371,7 +386,6 @@ function updateGlobeFrame(forceSyncAnchors = false) {
   flushDirtyAnchors()
 }
 
-// phi 收敛/静止时整帧跳过 globe.update，WebGL + 锚点写入双双归零
 const ORIENTATION_IDLE_EPSILON = 1e-5
 const { pause: pauseRaf, resume: resumeRaf } = useRafFn(
   () => {
@@ -387,14 +401,13 @@ const { pause: pauseRaf, resume: resumeRaf } = useRafFn(
       Math.abs(phi - prevPhi) < ORIENTATION_IDLE_EPSILON
       && Math.abs(theta - prevTheta) < ORIENTATION_IDLE_EPSILON
     ) {
-      if (!shouldAutoRotate.value && shouldKeepStaticRedraw()) {
+      if (!shouldAutoRotate.value && shouldKeepStaticRedraw())
         updateGlobeFrame(true)
-      }
       return
     }
     updateGlobeFrame()
   },
-  { immediate: false /* fpsLimit: 60 */ },
+  { immediate: false },
 )
 
 function startGlobe() {
@@ -409,19 +422,13 @@ function startGlobe() {
   hookWrapperAppend()
   patchAllAnchors()
   syncAnchorRefs()
-  // 静止地球没有自转帧，首帧需要在实际尺寸稳定后主动重绘一次。
   requestAnimationFrame(() => {
     updateGlobeFrame(true)
   })
-  // documentVisibility 同步可读；useElementVisibility 需等 IntersectionObserver 首回调
-  // 先按"前台"启动，若实际不可见，shouldRender 的 watch 会在下一帧 pause
   if (documentVisibility.value === 'visible')
     resumeRaf()
 }
 
-// 必须先清空 anchorRefs 让 Teleport 把 marker 移回 wrapper，再 destroy；
-// 否则 destroy 时锚点 div 被移除会连带 marker 一起被剥离。
-// cobe 也不会清理自己创建的 wrapper Z，这里手动收尾。
 async function stopGlobe() {
   pauseRaf()
   anchorRefs.value = new Map()
@@ -452,7 +459,6 @@ onBeforeUnmount(() => {
   globe = null
 })
 
-// 切换主题时重建 globe
 watch(() => appStore.isDark, async () => {
   await rebuildGlobe()
 })
@@ -478,7 +484,6 @@ watch(
   },
 )
 
-// 仅地区集合或在线状态变化时才推送 markers/arcs；速率推送不触发
 watch(
   () => regionClusters.value.map(clusterKey).join(','),
   () => {
@@ -489,10 +494,18 @@ watch(
     syncAnchorRefs()
     if (!shouldAutoRotate.value)
       triggerStaticRedrawWindow(600)
-    // phi 静止时 RAF 跳帧会漏掉这次 flush，手动补一次
     flushDirtyAnchors()
   },
 )
+
+// 访客坐标获取后重新推送 arcs
+watch(visitorCoord, () => {
+  if (!globe)
+    return
+  globe.update({ arcs: arcs.value })
+  if (!shouldAutoRotate.value)
+    triggerStaticRedrawWindow(600)
+})
 
 watch(shouldRender, (visible) => {
   if (!globe)
@@ -566,9 +579,7 @@ function formatRate(bytesPerSec: number): string {
             :src="`/images/flags/${cluster.code}.svg`" :alt="cluster.code"
             class="size-4 block absolute -bottom-2 -left-2 z-1"
           >
-          <div
-            class="relative z-2 bg-background/60 rounded py-0.5 px-1 text-xs zoom-80 items-start justify-center text-nowrap"
-          >
+          <div class="relative z-2 bg-background/60 rounded py-0.5 px-1 text-xs zoom-80 items-start justify-center text-nowrap">
             <div class="text-green-600 flex flex-row items-center gap-0.5">
               <Icon icon="tabler:chevron-up" width="12" height="12" /> {{ formatRate(rateFor(cluster.code).up) }}
             </div>
@@ -592,10 +603,6 @@ function formatRate(bytesPerSec: number): string {
         <span class="inline-block size-1.5 rounded-full bg-yellow-600 animate-pulse" />
         <span class="text-yellow-600">{{ offlineServers }}</span>
       </div>
-      <!-- <div v-if="totalServers > 0" class="flex items-center gap-1">
-        <span class="inline-block size-1.5 rounded-full bg-blue-600 animate-pulse" />
-        <span class="text-blue-600">{{ totalServers }}</span>
-      </div> -->
     </div>
   </div>
 </template>
