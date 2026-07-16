@@ -17,6 +17,7 @@ const runtimeAssetPathRewrites = [
   ['/assets/flags/', '/admin-app/assets/flags/'],
   ['/assets/logo/', '/admin-app/assets/logo/'],
 ] as const
+const runtimeAssetReferencePattern = /assets\/(?:flags|logo)\//g
 const adminCssVersion = createHash('sha256').update(readFileSync(overrideCss)).digest('hex').slice(0, 12)
 
 function rewriteRuntimeAssetPaths(directory: string): number {
@@ -53,6 +54,26 @@ function rewriteRuntimeAssetPaths(directory: string): number {
   return replacements
 }
 
+function countRuntimeAssetReferences(directory: string): number {
+  let references = 0
+
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = resolve(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      references += countRuntimeAssetReferences(entryPath)
+      continue
+    }
+
+    if (!entry.isFile() || !entry.name.endsWith('.js'))
+      continue
+
+    references += readFileSync(entryPath, 'utf8').match(runtimeAssetReferencePattern)?.length ?? 0
+  }
+
+  return references
+}
+
 if (!existsSync(resolve(sourceRoot, 'package.json')))
   throw new Error(`komari-web source not found: ${sourceRoot}`)
 
@@ -65,9 +86,10 @@ execFileSync(npmCommand, ['run', 'build', '--', '--base=/admin-app/'], {
 rmSync(targetDir, { recursive: true, force: true })
 cpSync(sourceDist, targetDir, { recursive: true })
 
-const rewrittenLogoPaths = rewriteRuntimeAssetPaths(targetDir)
-if (rewrittenLogoPaths === 0)
-  throw new Error('komari-web build output no longer contains the expected /assets/logo/ runtime path')
+const rewrittenRuntimeAssetPaths = rewriteRuntimeAssetPaths(targetDir)
+const runtimeAssetReferences = countRuntimeAssetReferences(targetDir)
+if (runtimeAssetReferences === 0)
+  throw new Error('komari-web build output no longer contains runtime flag or OS logo asset references')
 
 const indexPath = resolve(targetDir, 'index.html')
 let html = readFileSync(indexPath, 'utf8')
@@ -107,4 +129,4 @@ writeFileSync(resolve(targetDir, 'komari-admin-source.json'), `${JSON.stringify(
   synced_at: new Date().toISOString(),
 }, null, 2)}\n`)
 
-console.log(`[sync-komari-admin] Synced complete admin app from ${sourceRoot} (${rewrittenLogoPaths} runtime logo paths rewritten)`)
+console.log(`[sync-komari-admin] Synced complete admin app from ${sourceRoot} (${runtimeAssetReferences} runtime asset paths found, ${rewrittenRuntimeAssetPaths} rewritten)`)
